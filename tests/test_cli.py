@@ -13,6 +13,7 @@ def _clean_env() -> dict[str, str]:
     for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_BASE_URL"):
         env.pop(name, None)
     env["NO_COLOR"] = "1"
+    env["FFAI_LANG"] = "en"
     return env
 
 
@@ -111,3 +112,44 @@ def test_config_command_masks_api_key() -> None:
     assert "********alue" in completed.stdout
     assert "Use 'config set'" in completed.stdout
     assert "Traceback" not in completed.stderr
+
+
+def test_chinese_ui_can_be_selected() -> None:
+    env = _configured_env()
+    env["FFAI_LANG"] = "zh"
+    completed = subprocess.run(
+        [sys.executable, "-m", "ffai"],
+        cwd=ROOT,
+        input="help\nshow\nconfig\nexit\n",
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=env,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert "FFmpeg 自然语言交互界面" in completed.stdout
+    assert "ffai 帮助" in completed.stdout
+    assert "当前任务" in completed.stdout
+    assert "API 配置" in completed.stdout
+    assert "输出文件" in completed.stdout
+    assert "再见。" in completed.stdout
+    assert "Traceback" not in completed.stderr
+
+
+def test_language_flag_overrides_locale_and_environment() -> None:
+    env = _configured_env()
+    env["FFAI_LANG"] = "zh"
+    completed = subprocess.run(
+        [sys.executable, "-m", "ffai", "--lang", "en"],
+        cwd=ROOT,
+        input="help\nexit\n",
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=env,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert "ffai help" in completed.stdout
+    assert "Goodbye." in completed.stdout

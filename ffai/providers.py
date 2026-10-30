@@ -19,6 +19,8 @@ class ProviderPreset:
     docs_url: str | None = None
     api_key_url: str | None = None
     note: str | None = None
+    name_zh: str | None = None
+    note_zh: str | None = None
 
 
 PROVIDERS: tuple[ProviderPreset, ...] = (
@@ -38,6 +40,7 @@ PROVIDERS: tuple[ProviderPreset, ...] = (
         docs_url="https://openrouter.ai/docs/quickstart",
         api_key_url="https://openrouter.ai/keys",
         note="Model IDs are vendor-prefixed, for example openai/gpt-5.4-mini.",
+        note_zh="模型 ID 带供应商前缀，例如 openai/gpt-5.4-mini。",
     ),
     ProviderPreset(
         id="deepseek",
@@ -55,6 +58,7 @@ PROVIDERS: tuple[ProviderPreset, ...] = (
         docs_url="https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3",
         api_key_url="https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
         note="Uses Zhipu's OpenAI Chat Completions-compatible endpoint.",
+        note_zh="使用智谱的 OpenAI Chat Completions 兼容端点。",
     ),
     ProviderPreset(
         id="kimi",
@@ -75,6 +79,7 @@ PROVIDERS: tuple[ProviderPreset, ...] = (
             "China-region endpoint. Use your region's compatible-mode URL and a "
             "matching regional API key."
         ),
+        note_zh="此为中国区端点。其他区域请使用对应区域的 compatible-mode URL 和 API Key。",
     ),
 )
 
@@ -84,6 +89,8 @@ CUSTOM_PROVIDER = ProviderPreset(
     base_url=None,
     default_model=None,
     note="Any OpenAI-compatible endpoint that accepts a bearer API key.",
+    name_zh="自定义（OpenAI 兼容）",
+    note_zh="支持任何接受 Bearer API Key 的 OpenAI 兼容端点。",
 )
 
 PROVIDER_CHOICES: tuple[ProviderPreset, ...] = (*PROVIDERS, CUSTOM_PROVIDER)

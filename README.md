@@ -1,5 +1,7 @@
 # ffai
 
+English | [简体中文](README.zh-CN.md)
+
 `ffai` is an interactive, stateful natural-language interface for FFmpeg. You
 describe a media operation, the LLM updates a structured task, and ffai builds
 the actual FFmpeg command locally. Nothing is executed until you confirm the
@@ -43,6 +45,8 @@ ffai> exec
   a custom OpenAI-compatible endpoint.
 - First-run API setup wizard; `.env` settings are written with owner-only
   permissions. The `config` command displays or updates the active settings.
+- English and Simplified Chinese UI with locale detection and an explicit
+  language override. Natural-language replies follow the user's language.
 
 ## Requirements
 
@@ -144,6 +148,13 @@ Ctrl+C cancels without writing anything.
 
 Start ffai from the project directory (or any directory with the same exported
 variables).
+
+### UI language
+
+The interface auto-detects Chinese from `LC_ALL`, `LC_MESSAGES`, or `LANG`;
+otherwise it uses English. Override the choice with `FFAI_LANG=en` /
+`FFAI_LANG=zh` (process environment or `.env`) or the `--lang en` / `--lang zh`
+flag. LLM replies follow the language used in your request.
 
 ## Built-in commands
 
@@ -258,6 +269,7 @@ The full model result also includes `explanation` and an optional `question`.
 | `ffai/executor.py` | FFmpeg subprocess, progress parsing, interrupt handling |
 | `ffai/config.py` | `.env`/environment configuration and safe persistence |
 | `ffai/utils.py` | Command rendering, duration probing, environment scrubbing |
+| `ffai/i18n.py` | English and Simplified Chinese UI strings and language detection |
 
 ## Command construction and safety
 

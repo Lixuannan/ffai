@@ -28,6 +28,7 @@ from ffai.config import (
 )
 from ffai.errors import CommandBuildError, ConfigError, FFAIError, ParseError
 from ffai.executor import ExecutionResult, execute_ffmpeg
+from ffai.i18n import Translator, resolve_language
 from ffai.llm import LLMClient
 from ffai.models import TASK_DISPLAY_FIELDS, LLMDecision
 from ffai.parser import BuiltinCommand, NaturalLanguage, ParsedInput, parse_input
@@ -36,7 +37,6 @@ from ffai.providers import (
     PROVIDER_CHOICES,
     ProviderPreset,
     identify_provider,
-    provider_name_for,
 )
 from ffai.state import SessionState, TaskChange
 from ffai.utils import (
@@ -48,34 +48,32 @@ from ffai.utils import (
 
 PROMPT = "[bold cyan]ffai[/bold cyan][bright_black]>[/bright_black] "
 
-_FIELD_LABELS = {
-    "video_filters": "Video filters",
-    "audio_filters": "Audio filters",
-    "filter_complex": "Filter complex",
-    "maps": "Stream maps",
-    "video_codec": "Video codec",
-    "audio_codec": "Audio codec",
-    "crf": "CRF",
-    "preset": "Preset",
-    "video_bitrate": "Video bitrate",
-    "audio_bitrate": "Audio bitrate",
-    "extra_options": "Extra options",
-    "description": "Description",
+_FIELD_LABEL_KEYS = {
+    "video_filters": "field.video_filters",
+    "audio_filters": "field.audio_filters",
+    "filter_complex": "field.filter_complex",
+    "maps": "field.maps",
+    "video_codec": "field.video_codec",
+    "audio_codec": "field.audio_codec",
+    "crf": "field.crf",
+    "preset": "field.preset",
+    "video_bitrate": "field.video_bitrate",
+    "audio_bitrate": "field.audio_bitrate",
+    "extra_options": "field.extra_options",
+    "description": "field.description",
 }
 
 _HELP_ROWS = [
-    ("add <file> [file ...]", "Add one or more input media files"),
-    ("setoutput <file>", "Set the output file"),
-    ("show", "Show the current task state"),
-    ("preview", "Build and display the command without running it"),
-    ("exec", "Build, confirm, and run the command"),
-    ("reset", "Clear the task state"),
-    ("config [show|set]", "Show or update the API configuration"),
-    ("help", "Show this help"),
-    ("exit / quit", "Exit ffai"),
+    ("add <file> [file ...]", "help.add"),
+    ("setoutput <file>", "help.setoutput"),
+    ("show", "help.show"),
+    ("preview", "help.preview"),
+    ("exec", "help.exec"),
+    ("reset", "help.reset"),
+    ("config [show|set]", "help.config"),
+    ("help", "help.help"),
+    ("exit / quit", "help.exit"),
 ]
-
-_CHINESE_ALIASES = "Chinese aliases: 预览, 显示, 执行, 重置, 配置, 帮助, 退出"
 
 
 class FFaiRepl:
@@ -83,9 +81,11 @@ class FFaiRepl:
         self,
         settings: Settings,
         console: Console | None = None,
+        translator: Translator | None = None,
     ) -> None:
         self.settings = settings
         self.console = console or Console(highlight=False)
+        self.t = translator or Translator(resolve_language())
         self.state = SessionState()
         self._llm_client: LLMClient | None = None
         self._running = True
@@ -107,7 +107,7 @@ class FFaiRepl:
                 break
             except KeyboardInterrupt:
                 self.console.print()
-                self.console.print(Text("Press Ctrl+D or type 'exit' to quit.", style="dim"))
+                self.console.print(Text(self.t("loop.quit_hint"), style="dim"))
                 continue
 
             if not raw.strip():
@@ -115,20 +115,20 @@ class FFaiRepl:
             try:
                 parsed = parse_input(raw)
             except ParseError as exc:
-                self._show_error("Input error", exc)
+                self._show_error(self.t("error.input_title"), exc)
                 continue
 
             try:
                 self._dispatch(parsed)
             except FFAIError as exc:
-                self._show_error("Error", exc)
+                self._show_error(self.t("error.title"), exc)
             except KeyboardInterrupt:
                 self.console.print()
-                self._show_warning("Interrupted. The current task was kept.")
+                self._show_warning(self.t("loop.interrupt_kept"))
             except BrokenPipeError:
                 break
 
-        self.console.print(Text("Goodbye.", style="dim"))
+        self.console.print(Text(self.t("loop.goodbye"), style="dim"))
 
     def _dispatch(self, parsed: ParsedInput) -> None:
         if isinstance(parsed, NaturalLanguage):
@@ -163,22 +163,17 @@ class FFaiRepl:
     def _cmd_add(self, paths: Sequence[str]) -> None:
         result = self.state.add_inputs(paths)
         for path in result.added:
-            self._success(f"Added input: {path}")
+            self._success(self.t("action.added", path=path))
         for path in result.duplicates:
-            self._show_warning(f"Already added: {path}")
+            self._show_warning(self.t("action.duplicate", path=path))
         if result.added:
-            self.console.print(
-                Text(
-                    "Tip: set an output with 'setoutput <file>', then describe the operation.",
-                    style="dim",
-                )
-            )
+            self.console.print(Text(self.t("action.add_tip"), style="dim"))
         elif not result.duplicates:
-            self._show_warning("No files were added.")
+            self._show_warning(self.t("action.no_files"))
 
     def _cmd_setoutput(self, path: str) -> None:
         output = self.state.set_output(path)
-        self._success(f"Output set: {output}")
+        self._success(self.t("action.output_set", path=output))
 
     def _cmd_show(self) -> None:
         self.console.print(self._task_panel())
@@ -188,7 +183,7 @@ class FFaiRepl:
         try:
             command = build_command(task)
         except CommandBuildError as exc:
-            self._show_error("Cannot build command", exc)
+            self._show_error(self.t("error.cannot_build_title"), exc)
             return
         self.console.print(self._command_panel(command, preview=True))
         self._show_overwrite_notice(task.output)
@@ -198,7 +193,7 @@ class FFaiRepl:
         try:
             command = build_command(task)
         except CommandBuildError as exc:
-            self._show_error("Cannot build command", exc)
+            self._show_error(self.t("error.cannot_build_title"), exc)
             return
 
         self.console.print(self._command_panel(command, preview=False))
@@ -206,16 +201,16 @@ class FFaiRepl:
 
         try:
             confirmed = Confirm.ask(
-                "Execute this command?",
+                self.t("panel.confirm_execute"),
                 console=self.console,
                 default=False,
             )
         except (EOFError, KeyboardInterrupt):
             self.console.print()
-            self._show_warning("Execution cancelled.")
+            self._show_warning(self.t("execution.cancelled"))
             return
         if not confirmed:
-            self._show_warning("Execution cancelled.")
+            self._show_warning(self.t("execution.cancelled"))
             return
 
         assert task.output is not None
@@ -229,14 +224,14 @@ class FFaiRepl:
             )
         except KeyboardInterrupt:
             self.console.print()
-            self._show_warning("Execution interrupted.")
+            self._show_warning(self.t("execution.interrupted"))
             return
 
         self._render_execution_result(result)
 
     def _cmd_reset(self) -> None:
         self.state.reset()
-        self._success("Task state cleared.")
+        self._success(self.t("action.reset"))
 
     def _cmd_config(self, args: Sequence[str]) -> None:
         action = args[0] if args else "show"
@@ -246,9 +241,7 @@ class FFaiRepl:
             return
 
         self.console.print(self._config_panel())
-        self.console.print(
-            Text("Use 'config set' to update the API connection settings.", style="dim")
-        )
+        self.console.print(Text(self.t("config.show_hint"), style="dim"))
 
     def _can_prompt(self) -> bool:
         return self.console.is_terminal and sys.stdin.isatty()
@@ -264,49 +257,41 @@ class FFaiRepl:
             missing.append(MODEL_ENV)
 
         if not self._can_prompt():
-            raise ConfigError(
-                "API configuration is required before ffai can start. Missing: "
-                + ", ".join(missing)
-                + ". Set the environment variables or run ffai in an interactive "
-                "terminal to use the setup wizard."
-            )
+            raise ConfigError(self.t("startup.noninteractive", missing=", ".join(missing)))
 
         intro = Text()
-        intro.append("ffai requires an OpenAI-compatible API configuration.\n\n", style="bold")
-        intro.append("Missing: ", style="bold")
+        intro.append(self.t("startup.setup_required_intro"), style="bold")
+        intro.append(self.t("startup.missing_label"), style="bold")
         intro.append(", ".join(missing))
-        intro.append("\n\nComplete the setup below. Ctrl+C cancels startup.", style="dim")
+        intro.append(self.t("startup.setup_hint"), style="dim")
         self.console.print(
             Panel(
                 intro,
-                title="[bold yellow]API setup required[/bold yellow]",
+                title=self.t("config.setup_required_title"),
                 border_style="yellow",
                 box=box.ROUNDED,
                 padding=(1, 2),
             )
         )
         if not self._run_config_wizard():
-            raise ConfigError("API configuration was not completed; ffai cannot start.")
+            raise ConfigError(self.t("startup.setup_cancelled"))
 
     def _run_config_wizard(self) -> bool:
         if not self._can_prompt():
             self._show_error(
-                "Configuration error",
-                ConfigError("Interactive setup requires a terminal."),
+                self.t("error.config_title"),
+                ConfigError(self.t("config.interactive_required")),
             )
             return False
 
         instructions = Text()
-        instructions.append("Configure the API connection.\n", style="bold")
-        instructions.append(
-            "Press Enter to keep a current value. Choose a provider by number or ID.\n",
-            style="dim",
-        )
-        instructions.append(f"Settings are saved to {env_file_path()}.", style="dim")
+        instructions.append(self.t("config.wizard_intro"), style="bold")
+        instructions.append(self.t("config.wizard_hint"), style="dim")
+        instructions.append(self.t("config.save_location", path=env_file_path()), style="dim")
         self.console.print(
             Panel(
                 instructions,
-                title="[bold]API configuration[/bold]",
+                title=self.t("config.title"),
                 border_style="cyan",
                 box=box.ROUNDED,
                 padding=(1, 2),
@@ -337,7 +322,7 @@ class FFaiRepl:
             else:
                 base_url = provider.base_url
             api_key = self._ask_required_secret(
-                f"{provider.name} API key",
+                self._provider_name(provider),
                 current_key if not provider_changed else None,
             )
             model = self._ask_model(
@@ -346,26 +331,41 @@ class FFaiRepl:
             )
         except (EOFError, KeyboardInterrupt):
             self.console.print()
-            self._show_warning("Configuration cancelled; no changes saved.")
+            self._show_warning(self.t("config.setup_cancelled"))
             return False
 
         try:
             candidate = Settings(api_key=api_key, base_url=base_url, model=model)
             candidate.require_llm()
         except (ValidationError, ConfigError) as exc:
-            self._show_error("Invalid configuration", ConfigError(_validation_message(exc)))
+            self._show_error(
+                self.t("error.invalid_config_title"), ConfigError(_validation_message(exc))
+            )
             return False
 
         try:
             saved = save_llm_settings(candidate)
         except ConfigError as exc:
-            self._show_error("Configuration error", exc)
+            self._show_error(self.t("error.config_title"), exc)
             return False
 
         self.settings = candidate
         self._llm_client = None
-        self._success(f"API configuration saved to {saved}")
+        self._success(self.t("action.config_saved", path=saved))
         return True
+
+    def _provider_name(self, provider: ProviderPreset) -> str:
+        if self.t.language == "zh" and provider.name_zh:
+            return provider.name_zh
+        return provider.name
+
+    def _provider_note(self, provider: ProviderPreset) -> str | None:
+        if self.t.language == "zh" and provider.note_zh:
+            return provider.note_zh
+        return provider.note
+
+    def _current_provider(self) -> ProviderPreset:
+        return identify_provider(self.settings.base_url) or CUSTOM_PROVIDER
 
     def _render_provider_menu(self, current: ProviderPreset | None) -> None:
         table = Table(
@@ -375,34 +375,35 @@ class FFaiRepl:
             expand=True,
             padding=(0, 1),
         )
-        table.add_column("#", style="bold cyan", no_wrap=True)
-        table.add_column("Provider", no_wrap=True)
-        table.add_column("Base URL")
-        table.add_column("Suggested model", no_wrap=True)
+        table.add_column(self.t("config.column_number"), style="bold cyan", no_wrap=True)
+        table.add_column(self.t("config.column_provider"), no_wrap=True)
+        table.add_column(self.t("config.column_base_url"))
+        table.add_column(self.t("config.column_model"), no_wrap=True)
         for index, provider in enumerate(PROVIDER_CHOICES, start=1):
-            label = provider.name
+            label = self._provider_name(provider)
             if current is not None and provider.id == current.id:
-                label = f"{label} (current)"
+                label = self.t("config.current_marker", name=label)
             table.add_row(
                 str(index),
                 label,
-                provider.base_url or "(enter a custom URL)",
-                provider.default_model or "(enter a model)",
+                provider.base_url or self.t("config.custom_url_placeholder"),
+                provider.default_model or self.t("config.custom_model_placeholder"),
             )
         self.console.print(table)
 
     def _render_provider_details(self, provider: ProviderPreset) -> None:
         details = Text()
-        details.append(provider.name, style="bold")
-        if provider.note:
-            details.append(f" — {provider.note}", style="dim")
+        details.append(self._provider_name(provider), style="bold")
+        note = self._provider_note(provider)
+        if note:
+            details.append(f" — {note}", style="dim")
         self.console.print(details)
         if provider.docs_url:
-            docs = Text("Docs: ", style="dim")
+            docs = Text(self.t("config.docs_label"), style="dim")
             docs.append(provider.docs_url, style="dim")
             self.console.print(docs)
         if provider.api_key_url:
-            keys = Text("API keys: ", style="dim")
+            keys = Text(self.t("config.api_keys_label"), style="dim")
             keys.append(provider.api_key_url, style="dim")
             self.console.print(keys)
 
@@ -419,17 +420,17 @@ class FFaiRepl:
             "dashscope": "qwen",
             "custom": "custom",
         }
-        hint = (
-            f" (Enter keeps {current.name})"
+        prompt = (
+            self.t("config.provider_prompt_keep", current=self._provider_name(current))
             if current is not None
-            else f" (1-{len(PROVIDER_CHOICES)})"
+            else self.t("config.provider_prompt_new", count=len(PROVIDER_CHOICES))
         )
         while True:
-            raw = self.console.input(f"[bold]Provider[/bold]{hint} (number or ID): ").strip()
+            raw = self.console.input(prompt).strip()
             if not raw:
                 if current:
                     return current
-                self._show_warning("Choose a provider.")
+                self._show_warning(self.t("config.provider_required"))
                 continue
             if raw.isdigit():
                 index = int(raw) - 1
@@ -445,51 +446,61 @@ class FFaiRepl:
             )
             if provider is not None:
                 return provider
-            self._show_warning("Unknown provider. Enter a listed number or provider ID.")
+            self._show_warning(self.t("config.provider_unknown"))
 
-    def _ask_required_secret(self, label: str, current: str | None) -> str:
+    def _ask_required_secret(self, provider: str, current: str | None) -> str:
+        if current:
+            prompt = self.t("config.api_key_prompt_keep", provider=provider)
+        else:
+            prompt = self.t("config.api_key_prompt_new", provider=provider)
         while True:
-            hint = " (Enter keeps current): " if current else ": "
-            value = self.console.input(f"[bold]{label}[/bold]{hint}", password=True).strip()
+            value = self.console.input(prompt, password=True).strip()
             if value:
                 return value
             if current:
                 return current
-            self._show_warning(f"{label} is required.")
+            self._show_warning(self.t("config.api_key_required", provider=provider))
 
     def _ask_model(self, current: str | None, suggested: str | None) -> str:
+        if current:
+            prompt = self.t("config.model_prompt_keep")
+        elif suggested:
+            prompt = self.t("config.model_prompt_default", model=suggested)
+        else:
+            prompt = self.t("config.model_prompt_new")
         while True:
-            if current:
-                hint = " (Enter keeps current): "
-            elif suggested:
-                hint = f" (default: {suggested}): "
-            else:
-                hint = ": "
-            value = self.console.input(f"[bold]Model[/bold]{hint}").strip()
+            value = self.console.input(prompt).strip()
             if value:
                 return value
             if current:
                 return current
             if suggested:
                 return suggested
-            self._show_warning("Model is required.")
+            self._show_warning(self.t("config.model_required"))
 
     def _ask_custom_base_url(self, current: str | None) -> str:
-        hint = " (required; Enter keeps current): " if current else " (required): "
+        prompt = (
+            self.t("config.base_url_prompt_keep")
+            if current
+            else self.t("config.base_url_prompt_new")
+        )
         while True:
-            value = self.console.input(f"[bold]Base URL[/bold]{hint}").strip()
+            value = self.console.input(prompt).strip()
             if not value:
                 if current:
                     return current
-                self._show_warning("Base URL is required for a custom provider.")
+                self._show_warning(self.t("config.base_url_required"))
                 continue
             try:
                 validated = Settings(base_url=value).base_url
             except ValidationError as exc:
-                self._show_error("Invalid base URL", ConfigError(_validation_message(exc)))
+                self._show_error(
+                    self.t("error.invalid_base_url_title"),
+                    ConfigError(_validation_message(exc)),
+                )
                 continue
             if validated is None:
-                self._show_warning("Base URL is required for a custom provider.")
+                self._show_warning(self.t("config.base_url_required"))
                 continue
             return validated
 
@@ -504,20 +515,33 @@ class FFaiRepl:
         )
         table.add_column("Field", style="bold cyan", no_wrap=True, width=18)
         table.add_column("Value")
-        table.add_row("Provider", Text(provider_name_for(self.settings.base_url)))
-        table.add_row("API key", Text(_mask_secret(self.settings.api_key)))
-        table.add_row("Model", Text(self.settings.model or "(not set)"))
         table.add_row(
-            "Base URL",
-            Text(self.settings.base_url or "(OpenAI default)"),
+            self.t("config.provider"),
+            Text(self._provider_name(self._current_provider())),
+        )
+        table.add_row(
+            self.t("config.api_key"),
+            Text(_mask_secret(self.settings.api_key, self.t("config.not_set"))),
+        )
+        table.add_row(
+            self.t("config.model"),
+            Text(self.settings.model or self.t("config.not_set")),
+        )
+        table.add_row(
+            self.t("config.base_url"),
+            Text(self.settings.base_url or self.t("config.openai_default")),
         )
         config_path = env_file_path()
-        path_label = str(config_path) if config_path.exists() else f"{config_path} (not created)"
-        table.add_row("Config file", Text(path_label))
+        path_label = (
+            str(config_path)
+            if config_path.exists()
+            else self.t("config.file_not_created", path=config_path)
+        )
+        table.add_row(self.t("config.config_file"), Text(path_label))
 
         return Panel(
             table,
-            title="[bold]API configuration[/bold]",
+            title=self.t("config.title"),
             border_style="cyan",
             box=box.ROUNDED,
             padding=(1, 2),
@@ -531,28 +555,24 @@ class FFaiRepl:
             expand=True,
             padding=(0, 1),
         )
-        table.add_column("Command", style="bold cyan", no_wrap=True)
-        table.add_column("Description", style="white")
-        for command, description in _HELP_ROWS:
-            table.add_row(command, description)
+        table.add_column(self.t("help.command"), style="bold cyan", no_wrap=True)
+        table.add_column(self.t("help.description"), style="white")
+        for command, description_key in _HELP_ROWS:
+            table.add_row(command, self.t(description_key))
 
         examples = Text()
-        examples.append("Natural language examples\n", style="bold")
-        examples.append("  crop the video to 1920x1080, centered\n", style="dim")
-        examples.append("  use H.265 with CRF 23\n", style="dim")
-        examples.append("  audio AAC at 192k\n\n", style="dim")
-        examples.append(
-            "Unrecognized input is sent to the LLM. It updates structured task "
-            "state; it never executes commands.",
-            style="dim",
-        )
+        examples.append(self.t("help.examples_title"), style="bold")
+        examples.append(self.t("help.example_crop"), style="dim")
+        examples.append(self.t("help.example_codec"), style="dim")
+        examples.append(self.t("help.example_audio"), style="dim")
+        examples.append(self.t("help.llm_note"), style="dim")
         examples.append("\n")
-        examples.append(_CHINESE_ALIASES, style="dim")
+        examples.append(self.t("help.aliases"), style="dim")
 
         self.console.print(
             Panel(
                 Group(table, examples),
-                title="[bold]ffai help[/bold]",
+                title=self.t("help.title"),
                 border_style="cyan",
                 box=box.ROUNDED,
                 padding=(1, 2),
@@ -565,7 +585,7 @@ class FFaiRepl:
         if client is None:
             client = LLMClient(config)
             self._llm_client = client
-        with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
+        with self.console.status(f"[cyan]{self.t('status.thinking')}[/cyan]", spinner="dots"):
             decision = client.analyze(self.state.llm_context(), request.text)
         self._render_decision(decision)
 
@@ -575,20 +595,15 @@ class FFaiRepl:
             self.console.print(Panel(Text(decision.explanation), title="ffai", border_style="cyan"))
             if changes:
                 self._render_changes(changes)
-                self.console.print(
-                    Text(
-                        "Run 'show' or 'preview' to inspect the updated task.",
-                        style="dim",
-                    )
-                )
+                self.console.print(Text(self.t("changes.hint"), style="dim"))
             else:
-                self._show_warning("The model proposed no effective task changes.")
+                self._show_warning(self.t("changes.none"))
             if decision.question:
                 self.console.print()
                 self.console.print(
                     Panel(
                         Text(decision.question),
-                        title="[bold yellow]Question[/bold yellow]",
+                        title=self.t("decision.question_title"),
                         border_style="yellow",
                     )
                 )
@@ -600,7 +615,7 @@ class FFaiRepl:
                 self.console.print(
                     Panel(
                         Text(decision.question),
-                        title="[bold yellow]Need clarification[/bold yellow]",
+                        title=self.t("decision.clarification_title"),
                         border_style="yellow",
                     )
                 )
@@ -614,31 +629,32 @@ class FFaiRepl:
 
     def _render_execution_result(self, result: ExecutionResult) -> None:
         if result.interrupted:
-            self._show_warning(
-                "Execution interrupted. A partial output file may exist and can be removed."
-            )
+            self._show_warning(self.t("execution.interrupted_partial"))
             return
         if result.succeeded:
             text = Text()
-            text.append("Command completed successfully.\n", style="bold green")
-            text.append("Output: ", style="dim")
+            text.append(self.t("execution.success"), style="bold green")
+            text.append(self.t("execution.output_label"), style="dim")
             text.append(result.output_path)
             size = format_file_size(result.output_path)
             if size:
                 text.append(f" ({size})", style="dim")
-            text.append(f"\nElapsed: {result.elapsed_seconds:.1f}s", style="dim")
+            text.append(
+                self.t("execution.elapsed", seconds=result.elapsed_seconds),
+                style="dim",
+            )
             self.console.print(
-                Panel(text, title="[bold green]Done[/bold green]", border_style="green")
+                Panel(text, title=self.t("execution.done_title"), border_style="green")
             )
             return
 
         details = Text()
-        details.append(f"FFmpeg exited with code {result.exit_code}.", style="bold red")
+        details.append(self.t("execution.exit_code", code=result.exit_code), style="bold red")
         if result.stderr_tail:
             details.append("\n\n")
             details.append(result.stderr_tail[-6_000:], style="dim")
         self.console.print(
-            Panel(details, title="[bold red]FFmpeg failed[/bold red]", border_style="red")
+            Panel(details, title=self.t("execution.failed_title"), border_style="red")
         )
 
     def _task_panel(self) -> Panel:
@@ -661,33 +677,41 @@ class FFaiRepl:
                     inputs.append("\n")
                 inputs.append(f"{index + 1}. ", style="dim")
                 inputs.append(media)
-            table.add_row("Inputs", inputs)
+            table.add_row(self.t("task.inputs"), inputs)
         else:
-            table.add_row("Inputs", Text("(none)", style="dim"))
+            table.add_row(self.t("task.inputs"), Text(self.t("task.none"), style="dim"))
 
-        table.add_row("Output", Text(task.output) if task.output else Text("(none)", style="dim"))
-        table.add_row("Description", Text(task.description or "(none)"))
+        table.add_row(
+            self.t("task.output"),
+            Text(task.output) if task.output else Text(self.t("task.none"), style="dim"),
+        )
+        description = task.description
+        if description == "New FFmpeg task":
+            description = self.t("task.default_description")
+        table.add_row(
+            self.t("task.description"),
+            Text(description or self.t("task.none")),
+        )
 
         for field in TASK_DISPLAY_FIELDS:
             if field == "description":
                 continue
             value = getattr(task, field)
-            table.add_row(_FIELD_LABELS[field], _format_field(field, value))
+            table.add_row(
+                self.t(_FIELD_LABEL_KEYS[field]),
+                _format_field(field, value, self.t("task.not_set")),
+            )
 
         return Panel(
             table,
-            title=f"[bold]Current task[/bold] [dim]revision {self.state.revision}[/dim]",
+            title=self.t("task.title", revision=self.state.revision),
             border_style="cyan",
             box=box.ROUNDED,
             padding=(1, 2),
         )
 
     def _command_panel(self, command: Sequence[str], *, preview: bool) -> Panel:
-        title = (
-            "[bold]Preview[/bold] [dim]not executed[/dim]"
-            if preview
-            else "[bold]Command to execute[/bold]"
-        )
+        title = self.t("panel.preview_title") if preview else self.t("panel.exec_title")
         syntax = Syntax(
             format_command(command),
             "bash",
@@ -706,59 +730,52 @@ class FFaiRepl:
 
     def _render_changes(self, changes: Sequence[TaskChange]) -> None:
         table = Table(
-            title="Updated fields",
+            title=self.t("changes.title"),
             box=box.SIMPLE_HEAD,
             show_edge=False,
             header_style="bold",
             padding=(0, 1),
         )
-        table.add_column("Field", style="cyan", no_wrap=True)
-        table.add_column("Before", style="dim")
-        table.add_column("After", style="white")
+        table.add_column(self.t("changes.field"), style="cyan", no_wrap=True)
+        table.add_column(self.t("changes.before"), style="dim")
+        table.add_column(self.t("changes.after"), style="white")
+        not_set = self.t("task.not_set")
         for change in changes:
-            label = _FIELD_LABELS.get(change.field, change.field)
+            label = self.t(_FIELD_LABEL_KEYS.get(change.field, "changes.field"))
             table.add_row(
                 label,
-                Text(_format_change_value(change.field, change.before)),
-                Text(_format_change_value(change.field, change.after)),
+                Text(_format_change_value(change.field, change.before, not_set)),
+                Text(_format_change_value(change.field, change.after, not_set)),
             )
         self.console.print(table)
 
     def _show_overwrite_notice(self, output: str | None) -> None:
         if output and Path(output).exists():
-            self.console.print(
-                Text(
-                    "Warning: the output file already exists and will be overwritten.",
-                    style="yellow",
-                )
-            )
+            self.console.print(Text(self.t("panel.overwrite_warning"), style="yellow"))
 
     def _render_banner(self) -> None:
         self.console.print(f"[bold cyan]ffai[/bold cyan] [dim]v{__version__}[/dim]")
-        self.console.print(Text("Natural Language Interface for FFmpeg", style="dim"))
+        self.console.print(Text(self.t("banner.tagline"), style="dim"))
         self.console.print()
 
     def _render_startup_notes(self) -> None:
-        provider = provider_name_for(self.settings.base_url)
-        endpoint = self.settings.base_url or "OpenAI default"
+        provider = self._provider_name(self._current_provider())
+        endpoint = self.settings.base_url or self.t("config.openai_default")
         api_line = Text()
-        api_line.append("API: ", style="dim")
-        api_line.append(f"{provider} / {self.settings.model} at {endpoint}", style="dim")
+        api_line.append(self.t("startup.api_label"), style="dim")
+        api_line.append(
+            self.t(
+                "startup.api_value",
+                provider=provider,
+                model=self.settings.model,
+                endpoint=endpoint,
+            ),
+            style="dim",
+        )
         self.console.print(api_line)
         if not ffmpeg_available():
-            self.console.print(
-                Text(
-                    "FFmpeg was not found on PATH. Install it before running commands.",
-                    style="yellow",
-                )
-            )
-        self.console.print(
-            Text(
-                "Type 'help' for commands, or describe a video operation in natural "
-                "language. 'exit' quits.",
-                style="dim",
-            )
-        )
+            self.console.print(Text(self.t("startup.ffmpeg_missing"), style="yellow"))
+        self.console.print(Text(self.t("startup.hint"), style="dim"))
         self.console.print()
 
     def _success(self, message: str) -> None:
@@ -784,9 +801,9 @@ class FFaiRepl:
         )
 
 
-def _format_field(field: str, value: object) -> Text:
+def _format_field(field: str, value: object, not_set: str) -> Text:
     if value is None or value == [] or value == "":
-        return Text("(not set)", style="dim")
+        return Text(not_set, style="dim")
     if field in {"video_filters", "audio_filters"}:
         return Text(", ".join(str(item) for item in value))
     if field == "maps":
@@ -796,9 +813,9 @@ def _format_field(field: str, value: object) -> Text:
     return Text(str(value))
 
 
-def _format_change_value(field: str, value: object) -> str:
+def _format_change_value(field: str, value: object, not_set: str) -> str:
     if value is None or value == [] or value == "":
-        return "(not set)"
+        return not_set
     if isinstance(value, list):
         if field == "extra_options":
             return shlex.join(str(item) for item in value)
@@ -806,9 +823,9 @@ def _format_change_value(field: str, value: object) -> str:
     return str(value)
 
 
-def _mask_secret(secret: SecretStr | None) -> str:
+def _mask_secret(secret: SecretStr | None, not_set: str) -> str:
     if secret is None:
-        return "(not set)"
+        return not_set
     value = secret.get_secret_value()
     if len(value) <= 8:
         return "********"
