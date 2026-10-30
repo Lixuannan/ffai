@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ffai"
+version = "0.1.0"
+description = "Natural-language, stateful FFmpeg command generator"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ffai contributors" }]
+keywords = ["ffmpeg", "cli", "llm", "video", "openai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "openai>=1.40.0,<3",
+    "pydantic>=2.7,<3",
+    "python-dotenv>=1.0,<2",
+    "rich>=13.7,<15",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<10",
+    "pytest-cov>=5.0,<8",
+    "ruff>=0.6,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/Lixuannan/ffai"
+Repository = "https://github.com/Lixuannan/ffai"
+Issues = "https://github.com/Lixuannan/ffai/issues"
+
+[project.scripts]
+ffai = "ffai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ffai*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
