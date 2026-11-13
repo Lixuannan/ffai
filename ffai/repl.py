@@ -6,7 +6,7 @@ import shlex
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import assert_never
+from typing import assert_never, cast
 
 from pydantic import SecretStr, ValidationError
 from rich import box
@@ -18,7 +18,6 @@ from rich.table import Table
 from rich.text import Text
 
 from ffai import __version__
-from ffai.command_builder import build_command
 from ffai.config import (
     API_KEY_ENV,
     MODEL_ENV,
@@ -27,10 +26,10 @@ from ffai.config import (
     save_llm_settings,
 )
 from ffai.errors import CommandBuildError, ConfigError, FFAIError, ParseError
-from ffai.executor import ExecutionResult, execute_ffmpeg
+from ffai.executor import ExecutionResult, execute_tool
 from ffai.i18n import Translator, resolve_language
 from ffai.llm import LLMClient
-from ffai.models import TASK_DISPLAY_FIELDS, LLMDecision
+from ffai.models import LLMDecision, ToolName
 from ffai.parser import BuiltinCommand, NaturalLanguage, ParsedInput, parse_input
 from ffai.providers import (
     CUSTOM_PROVIDER,
@@ -39,8 +38,8 @@ from ffai.providers import (
     identify_provider,
 )
 from ffai.state import SessionState, TaskChange
+from ffai.tools import TOOL_SPECS, missing_tools
 from ffai.utils import (
-    ffmpeg_available,
     format_command,
     format_file_size,
     probe_duration,
@@ -49,6 +48,7 @@ from ffai.utils import (
 PROMPT = "[bold cyan]ffai[/bold cyan][bright_black]>[/bright_black] "
 
 _FIELD_LABEL_KEYS = {
+    "tool": "field.tool",
     "video_filters": "field.video_filters",
     "audio_filters": "field.audio_filters",
     "filter_complex": "field.filter_complex",
@@ -61,10 +61,28 @@ _FIELD_LABEL_KEYS = {
     "audio_bitrate": "field.audio_bitrate",
     "extra_options": "field.extra_options",
     "description": "field.description",
+    "from_format": "field.from_format",
+    "to_format": "field.to_format",
+    "standalone": "field.standalone",
+    "toc": "field.toc",
+    "toc_depth": "field.toc_depth",
+    "number_sections": "field.number_sections",
+    "shift_heading_level_by": "field.shift_heading_level_by",
+    "metadata": "field.metadata",
+    "template": "field.template",
+    "reference_doc": "field.reference_doc",
+    "pdf_engine": "field.pdf_engine",
+    "highlight_style": "field.highlight_style",
+    "embed_resources": "field.embed_resources",
+    "citeproc": "field.citeproc",
+    "bibliography": "field.bibliography",
+    "csl": "field.csl",
+    "resource_path": "field.resource_path",
 }
 
 _HELP_ROWS = [
     ("add <file> [file ...]", "help.add"),
+    ("tool <ffmpeg|pandoc>", "help.tool"),
     ("setoutput <file>", "help.setoutput"),
     ("show", "help.show"),
     ("preview", "help.preview"),
@@ -141,6 +159,8 @@ class FFaiRepl:
         match parsed.name:
             case "add":
                 self._cmd_add(parsed.args)
+            case "tool":
+                self._cmd_tool(cast(ToolName, parsed.args[0]))
             case "setoutput":
                 self._cmd_setoutput(parsed.args[0])
             case "show":
@@ -166,10 +186,27 @@ class FFaiRepl:
             self._success(self.t("action.added", path=path))
         for path in result.duplicates:
             self._show_warning(self.t("action.duplicate", path=path))
+        if result.switched_tool is not None:
+            self.console.print(
+                Text(
+                    self.t(
+                        "action.tool_detected",
+                        tool=TOOL_SPECS[result.switched_tool].label,
+                    ),
+                    style="cyan",
+                )
+            )
         if result.added:
             self.console.print(Text(self.t("action.add_tip"), style="dim"))
         elif not result.duplicates:
             self._show_warning(self.t("action.no_files"))
+
+    def _cmd_tool(self, tool: ToolName) -> None:
+        label = TOOL_SPECS[tool].label
+        if self.state.select_tool(tool):
+            self._success(self.t("action.tool_set", tool=label))
+        else:
+            self.console.print(Text(self.t("action.tool_unchanged", tool=label), style="dim"))
 
     def _cmd_setoutput(self, path: str) -> None:
         output = self.state.set_output(path)
@@ -179,9 +216,10 @@ class FFaiRepl:
         self.console.print(self._task_panel())
 
     def _cmd_preview(self) -> None:
+        spec = self.state.spec
         task = self.state.task
         try:
-            command = build_command(task)
+            command = spec.builder(task)
         except CommandBuildError as exc:
             self._show_error(self.t("error.cannot_build_title"), exc)
             return
@@ -189,9 +227,10 @@ class FFaiRepl:
         self._show_overwrite_notice(task.output)
 
     def _cmd_exec(self) -> None:
+        spec = self.state.spec
         task = self.state.task
         try:
-            command = build_command(task)
+            command = spec.builder(task)
         except CommandBuildError as exc:
             self._show_error(self.t("error.cannot_build_title"), exc)
             return
@@ -214,20 +253,26 @@ class FFaiRepl:
             return
 
         assert task.output is not None
-        duration = probe_duration(task.inputs[0])
+        duration = (
+            probe_duration(task.inputs[0])
+            if spec.supports_progress and task.inputs
+            else None
+        )
         try:
-            result = execute_ffmpeg(
+            result = execute_tool(
                 command,
                 expected_output=task.output,
                 console=self.console,
+                tool_label=spec.label,
                 total_duration=duration,
+                show_progress=spec.supports_progress,
             )
         except KeyboardInterrupt:
             self.console.print()
             self._show_warning(self.t("execution.interrupted"))
             return
 
-        self._render_execution_result(result)
+        self._render_execution_result(result, tool_label=spec.label)
 
     def _cmd_reset(self) -> None:
         self.state.reset()
@@ -565,6 +610,8 @@ class FFaiRepl:
         examples.append(self.t("help.example_crop"), style="dim")
         examples.append(self.t("help.example_codec"), style="dim")
         examples.append(self.t("help.example_audio"), style="dim")
+        examples.append(self.t("help.example_doc"), style="dim")
+        examples.append(self.t("help.example_pdf"), style="dim")
         examples.append(self.t("help.llm_note"), style="dim")
         examples.append("\n")
         examples.append(self.t("help.aliases"), style="dim")
@@ -627,7 +674,7 @@ class FFaiRepl:
 
         assert_never(decision.intent)
 
-    def _render_execution_result(self, result: ExecutionResult) -> None:
+    def _render_execution_result(self, result: ExecutionResult, *, tool_label: str) -> None:
         if result.interrupted:
             self._show_warning(self.t("execution.interrupted_partial"))
             return
@@ -649,16 +696,24 @@ class FFaiRepl:
             return
 
         details = Text()
-        details.append(self.t("execution.exit_code", code=result.exit_code), style="bold red")
+        details.append(
+            self.t("execution.exit_code", tool=tool_label, code=result.exit_code),
+            style="bold red",
+        )
         if result.stderr_tail:
             details.append("\n\n")
             details.append(result.stderr_tail[-6_000:], style="dim")
         self.console.print(
-            Panel(details, title=self.t("execution.failed_title"), border_style="red")
+            Panel(
+                details,
+                title=self.t("execution.failed_title", tool=tool_label),
+                border_style="red",
+            )
         )
 
     def _task_panel(self) -> Panel:
         task = self.state.task
+        spec = self.state.spec
         table = Table(
             box=box.SIMPLE,
             show_header=False,
@@ -685,26 +740,33 @@ class FFaiRepl:
             self.t("task.output"),
             Text(task.output) if task.output else Text(self.t("task.none"), style="dim"),
         )
+        table.add_row(self.t("task.tool"), Text(spec.label))
         description = task.description
-        if description == "New FFmpeg task":
-            description = self.t("task.default_description")
+        if description == spec.default_description:
+            description = self.t("task.default_description", tool=spec.label)
         table.add_row(
             self.t("task.description"),
             Text(description or self.t("task.none")),
         )
 
-        for field in TASK_DISPLAY_FIELDS:
+        for field in spec.display_fields:
             if field == "description":
                 continue
             value = getattr(task, field)
             table.add_row(
                 self.t(_FIELD_LABEL_KEYS[field]),
-                _format_field(field, value, self.t("task.not_set")),
+                _format_field(
+                    field,
+                    value,
+                    self.t("task.not_set"),
+                    yes=self.t("task.yes"),
+                    no=self.t("task.no"),
+                ),
             )
 
         return Panel(
             table,
-            title=self.t("task.title", revision=self.state.revision),
+            title=self.t("task.title", tool=spec.label, revision=self.state.revision),
             border_style="cyan",
             box=box.ROUNDED,
             padding=(1, 2),
@@ -742,11 +804,25 @@ class FFaiRepl:
         not_set = self.t("task.not_set")
         for change in changes:
             label = self.t(_FIELD_LABEL_KEYS.get(change.field, "changes.field"))
-            table.add_row(
-                label,
-                Text(_format_change_value(change.field, change.before, not_set)),
-                Text(_format_change_value(change.field, change.after, not_set)),
-            )
+            if change.field == "tool":
+                before = _tool_label(change.before)
+                after = _tool_label(change.after)
+            else:
+                before = _format_change_value(
+                    change.field,
+                    change.before,
+                    not_set,
+                    yes=self.t("task.yes"),
+                    no=self.t("task.no"),
+                )
+                after = _format_change_value(
+                    change.field,
+                    change.after,
+                    not_set,
+                    yes=self.t("task.yes"),
+                    no=self.t("task.no"),
+                )
+            table.add_row(label, Text(before, style="dim"), Text(after))
         self.console.print(table)
 
     def _show_overwrite_notice(self, output: str | None) -> None:
@@ -773,8 +849,13 @@ class FFaiRepl:
             style="dim",
         )
         self.console.print(api_line)
-        if not ffmpeg_available():
-            self.console.print(Text(self.t("startup.ffmpeg_missing"), style="yellow"))
+        for tool in missing_tools():
+            self.console.print(
+                Text(
+                    self.t("startup.tool_missing", tool=TOOL_SPECS[tool].label),
+                    style="yellow",
+                )
+            )
         self.console.print(Text(self.t("startup.hint"), style="dim"))
         self.console.print()
 
@@ -801,19 +882,33 @@ class FFaiRepl:
         )
 
 
-def _format_field(field: str, value: object, not_set: str) -> Text:
+def _tool_label(name: object) -> str:
+    spec = TOOL_SPECS.get(name) if isinstance(name, str) else None
+    return spec.label if spec is not None else str(name)
+
+
+def _format_field(field: str, value: object, not_set: str, *, yes: str, no: str) -> Text:
+    if isinstance(value, bool):
+        return Text(yes if value else no)
     if value is None or value == [] or value == "":
         return Text(not_set, style="dim")
-    if field in {"video_filters", "audio_filters"}:
+    if isinstance(value, list):
+        if field == "extra_options":
+            return Text(shlex.join(str(item) for item in value))
         return Text(", ".join(str(item) for item in value))
-    if field == "maps":
-        return Text(", ".join(str(item) for item in value))
-    if field == "extra_options":
-        return Text(shlex.join(str(item) for item in value))
     return Text(str(value))
 
 
-def _format_change_value(field: str, value: object, not_set: str) -> str:
+def _format_change_value(
+    field: str,
+    value: object,
+    not_set: str,
+    *,
+    yes: str,
+    no: str,
+) -> str:
+    if isinstance(value, bool):
+        return yes if value else no
     if value is None or value == [] or value == "":
         return not_set
     if isinstance(value, list):

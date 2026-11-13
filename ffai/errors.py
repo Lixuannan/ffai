@@ -20,11 +20,11 @@ class ParseError(FFAIError):
 
 
 class CommandBuildError(FFAIError):
-    """The current task cannot be converted into a safe FFmpeg command."""
+    """The current task cannot be converted into a safe tool command."""
 
 
 class ExecutionError(FFAIError):
-    """FFmpeg could not be started or did not produce its requested output."""
+    """The external conversion tool could not run or produce the requested output."""
 
 
 class LLMError(FFAIError):

@@ -41,3 +41,30 @@ def test_unknown_translation_key_is_visible() -> None:
 @pytest.mark.parametrize("language", ["en", "zh"])
 def test_all_translation_keys_have_non_empty_values(language: str) -> None:
     assert all(value for value in _CATALOGS[language].values())
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_tool_aware_messages_interpolate_the_tool_label(language: str) -> None:
+    translator = Translator(language)
+    for key in (
+        "action.tool_set",
+        "action.tool_unchanged",
+        "action.tool_detected",
+        "startup.tool_missing",
+        "execution.failed_title",
+        "execution.exit_code",
+    ):
+        assert "Pandoc" in translator(key, tool="Pandoc", code=1)
+    assert "Pandoc" in translator("task.title", tool="Pandoc", revision=3)
+
+
+def test_chinese_task_and_help_titles_keep_required_words() -> None:
+    assert "当前任务" in Translator("zh")("task.title", tool="Pandoc", revision=1)
+    assert "ffai 帮助" in Translator("zh")("help.title")
+
+
+@pytest.mark.parametrize(("language", "yes", "no"), [("en", "Yes", "No"), ("zh", "是", "否")])
+def test_task_boolean_labels_are_localized(language: str, yes: str, no: str) -> None:
+    translator = Translator(language)
+    assert translator("task.yes") == yes
+    assert translator("task.no") == no

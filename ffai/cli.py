@@ -19,7 +19,10 @@ from ffai.repl import FFaiRepl
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ffai",
-        description="Natural-language, stateful FFmpeg command generator.",
+        description=(
+            "Natural-language, stateful FFmpeg (media) and Pandoc (document) "
+            "conversion assistant."
+        ),
     )
     parser.add_argument(
         "--lang",

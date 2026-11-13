@@ -26,6 +26,12 @@ def scrubbed_environment(source: Mapping[str, str] | None = None) -> dict[str, s
     return {name: value for name, value in environment.items() if not _SECRET_ENV_NAME.search(name)}
 
 
+def binary_available(binary: str) -> bool:
+    """Return whether *binary* can be found on PATH."""
+
+    return shutil.which(binary) is not None
+
+
 def probe_duration(path: str, timeout_seconds: float = 10.0) -> float | None:
     """Best-effort media duration used only to render a progress bar.
 
@@ -82,4 +88,4 @@ def format_file_size(path: str) -> str | None:
 
 
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return binary_available("ffmpeg")

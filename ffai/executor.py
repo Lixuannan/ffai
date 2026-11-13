@@ -13,6 +13,7 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 from rich.console import Console
 from rich.progress import (
@@ -54,29 +55,36 @@ def parse_progress_seconds(line: str) -> float | None:
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
-def execute_ffmpeg(
+def execute_tool(
     args: Sequence[str],
     *,
     expected_output: str,
     console: Console,
+    tool_label: str,
     total_duration: float | None = None,
+    show_progress: bool = False,
 ) -> ExecutionResult:
     """Run a prebuilt argv list and report the real process outcome.
 
-    FFmpeg's stderr is consumed continuously so the pipe cannot deadlock, while
-    stats lines drive a Rich progress bar. Ctrl+C terminates the whole child
-    process group and is reported separately from a normal non-zero exit.
+    Stderr is consumed continuously so the pipe cannot deadlock. When
+    ``show_progress`` is enabled, FFmpeg-style ``time=HH:MM:SS.xx`` stats lines
+    drive a Rich progress bar. Without progress the bar is skipped entirely and
+    only the tail of stderr is kept for diagnostics. Ctrl+C terminates the whole
+    child process group on POSIX and is reported separately from a normal
+    non-zero exit.
     """
 
     if not args:
         raise ExecutionError("No command to execute")
     if shutil.which(args[0]) is None:
-        raise ExecutionError(f"{args[0]} was not found on PATH. Install FFmpeg and try again.")
+        raise ExecutionError(
+            f"{tool_label} was not found on PATH. Install {tool_label} and try again."
+        )
 
     popen_kwargs: dict[str, object] = {}
     if os.name == "posix":
         # Keep the child in its own process group so cancellation can reliably
-        # reach FFmpeg without leaving orphaned workers.
+        # reach the tool without leaving orphaned workers.
         popen_kwargs["start_new_session"] = True
 
     try:
@@ -93,7 +101,7 @@ def execute_ffmpeg(
             **popen_kwargs,
         )
     except OSError as exc:
-        raise ExecutionError(f"Could not start FFmpeg: {exc}") from exc
+        raise ExecutionError(f"Could not start {tool_label}: {exc}") from exc
 
     assert process.stderr is not None
     started = time.monotonic()
@@ -101,36 +109,40 @@ def execute_ffmpeg(
     tail: deque[str] = deque(maxlen=200)
     duration = total_duration if total_duration and total_duration > 0 else None
 
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    )
+    progress: Progress | None = None
+    if show_progress:
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        )
 
     try:
-        with progress:
-            task_id = progress.add_task("Encoding with FFmpeg", total=duration)
-            try:
-                for raw_line in process.stderr:
-                    line = raw_line.strip()
-                    if line:
-                        tail.append(line)
-                    seconds = parse_progress_seconds(raw_line)
-                    if seconds is not None:
-                        if duration is not None:
-                            progress.update(
-                                task_id,
-                                completed=min(seconds, duration),
-                            )
-                        else:
-                            progress.update(task_id, advance=0)
-            except KeyboardInterrupt:
-                interrupted = True
-                _terminate_process(process)
+        if progress is None:
+            _consume_stderr(
+                process.stderr,
+                tail,
+                progress=None,
+                task_id=None,
+                duration=None,
+            )
+        else:
+            with progress:
+                task_id = progress.add_task(f"Encoding with {tool_label}", total=duration)
+                _consume_stderr(
+                    process.stderr,
+                    tail,
+                    progress=progress,
+                    task_id=task_id,
+                    duration=duration,
+                )
+    except KeyboardInterrupt:
+        interrupted = True
+        _terminate_process(process)
     finally:
         if process.poll() is None:
             _terminate_process(process)
@@ -158,17 +170,63 @@ def execute_ffmpeg(
         output = Path(expected_output)
         if not output.is_file():
             raise ExecutionError(
-                "FFmpeg exited successfully but did not create the output file.\n"
-                + (result.stderr_tail or "No FFmpeg diagnostics were produced.")
+                f"{tool_label} exited successfully but did not create the output file.\n"
+                + (result.stderr_tail or "No diagnostics were produced.")
             )
         try:
             empty = output.stat().st_size == 0
         except OSError as exc:
             raise ExecutionError(f"Could not inspect the output file: {exc}") from exc
         if empty:
-            raise ExecutionError("FFmpeg exited successfully but the output file is empty.")
+            raise ExecutionError(
+                f"{tool_label} exited successfully but the output file is empty."
+            )
 
     return result
+
+
+def execute_ffmpeg(
+    args: Sequence[str],
+    *,
+    expected_output: str,
+    console: Console,
+    total_duration: float | None = None,
+) -> ExecutionResult:
+    """Run FFmpeg with its stats-driven progress bar."""
+
+    return execute_tool(
+        args,
+        expected_output=expected_output,
+        console=console,
+        tool_label="FFmpeg",
+        total_duration=total_duration,
+        show_progress=True,
+    )
+
+
+def _consume_stderr(
+    stream: TextIO,
+    tail: deque[str],
+    *,
+    progress: Progress | None,
+    task_id: int | None,
+    duration: float | None,
+) -> None:
+    """Drain stderr line by line, keeping the tail and feeding the progress bar."""
+
+    for raw_line in stream:
+        line = raw_line.strip()
+        if line:
+            tail.append(line)
+        if progress is None or task_id is None:
+            continue
+        seconds = parse_progress_seconds(raw_line)
+        if seconds is None:
+            continue
+        if duration is not None:
+            progress.update(task_id, completed=min(seconds, duration))
+        else:
+            progress.update(task_id, advance=0)
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:

@@ -50,6 +50,27 @@ def test_config_rejects_unknown_subcommand() -> None:
         parse_input("config reset")
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("tool ffmpeg", "ffmpeg"),
+        ("tool pandoc", "pandoc"),
+        ("工具 pandoc", "pandoc"),
+    ],
+)
+def test_parses_tool_command(raw: str, expected: str) -> None:
+    parsed = parse_input(raw)
+    assert isinstance(parsed, BuiltinCommand)
+    assert parsed.name == "tool"
+    assert parsed.args == (expected,)
+
+
+@pytest.mark.parametrize("raw", ["tool", "tool ffmpeg pandoc", "tool ffprobe", "工具"])
+def test_tool_requires_exactly_one_supported_tool(raw: str) -> None:
+    with pytest.raises(ParseError, match="Usage: tool"):
+        parse_input(raw)
+
+
 def test_parses_quit_as_exit() -> None:
     parsed = parse_input("quit")
     assert isinstance(parsed, BuiltinCommand)

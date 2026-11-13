@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ffai"
-version = "0.1.0"
-description = "Natural-language, stateful FFmpeg command generator"
+version = "0.2.0"
+description = "Natural-language, stateful media and document format conversion assistant (FFmpeg + Pandoc)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "ffai contributors" }]
-keywords = ["ffmpeg", "cli", "llm", "video", "openai"]
+keywords = ["ffmpeg", "pandoc", "cli", "llm", "video", "document", "conversion", "openai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -23,6 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Video",
+    "Topic :: Text Processing",
+    "Topic :: Text Processing :: Markup",
 ]
 dependencies = [
     "openai>=1.40.0,<3",

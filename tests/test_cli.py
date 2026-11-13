@@ -5,6 +5,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from rich.console import Console
+
+from ffai.config import Settings
+from ffai.i18n import Translator
+from ffai.repl import FFaiRepl
+from ffai.state import TaskChange
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -35,7 +42,7 @@ def test_version_uses_real_module_entry_point() -> None:
         check=False,
     )
     assert completed.returncode == 0
-    assert completed.stdout.strip() == "ffai 0.1.0"
+    assert completed.stdout.strip() == "ffai 0.2.0"
 
 
 def test_help_and_exit_through_the_repl() -> None:
@@ -51,7 +58,48 @@ def test_help_and_exit_through_the_repl() -> None:
     )
     assert completed.returncode == 0
     assert "ffai help" in completed.stdout
+    assert "tool <ffmpeg|pandoc>" in completed.stdout
+    assert "convert notes.md to report.pdf" in completed.stdout
     assert "Goodbye." in completed.stdout
+    assert "Traceback" not in completed.stderr
+
+
+def test_tool_command_switches_to_pandoc() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-m", "ffai"],
+        cwd=ROOT,
+        input="tool pandoc\nshow\nexit\n",
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=_configured_env(),
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert "Conversion tool set to Pandoc." in completed.stdout
+    assert "Pandoc task" in completed.stdout
+    assert "New Pandoc task" in completed.stdout
+    assert "From format" in completed.stdout
+    assert "Standalone" in completed.stdout
+    assert "Traceback" not in completed.stderr
+
+
+def test_adding_document_file_auto_selects_pandoc(tmp_path: Path) -> None:
+    document = tmp_path / "notes.md"
+    document.write_text("# Notes\n", encoding="utf-8")
+    completed = subprocess.run(
+        [sys.executable, "-m", "ffai"],
+        cwd=ROOT,
+        input=f'add "{document}"\nshow\nexit\n',
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=_configured_env(),
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert "Detected Pandoc from the input file type" in completed.stdout
+    assert "Pandoc task" in completed.stdout
     assert "Traceback" not in completed.stderr
 
 
@@ -128,13 +176,42 @@ def test_chinese_ui_can_be_selected() -> None:
         check=False,
     )
     assert completed.returncode == 0
-    assert "FFmpeg 自然语言交互界面" in completed.stdout
+    assert "媒体与文档转换的自然语言界面" in completed.stdout
     assert "ffai 帮助" in completed.stdout
     assert "当前任务" in completed.stdout
     assert "API 配置" in completed.stdout
     assert "输出文件" in completed.stdout
     assert "再见。" in completed.stdout
     assert "Traceback" not in completed.stderr
+
+
+def test_tool_change_renders_tool_labels_instead_of_ids() -> None:
+    console = Console(record=True, width=120, highlight=False)
+    repl = FFaiRepl(Settings(), console=console, translator=Translator("en"))
+    repl._render_changes([TaskChange(field="tool", before="ffmpeg", after="pandoc")])
+    output = console.export_text()
+    assert "Tool" in output
+    assert "FFmpeg" in output
+    assert "Pandoc" in output
+    assert "ffmpeg" not in output
+    assert "pandoc" not in output
+
+
+def test_pandoc_fields_render_localized_booleans_and_joined_lists() -> None:
+    console = Console(record=True, width=120, highlight=False)
+    repl = FFaiRepl(Settings(), console=console, translator=Translator("en"))
+    repl._render_changes(
+        [
+            TaskChange(field="standalone", before=False, after=True),
+            TaskChange(field="metadata", before=[], after=["title=Report", "author=Ada"]),
+            TaskChange(field="extra_options", before=[], after=["-N", "--wrap=preserve"]),
+        ]
+    )
+    output = console.export_text()
+    assert "No" in output
+    assert "Yes" in output
+    assert "title=Report, author=Ada" in output
+    assert "-N --wrap=preserve" in output
 
 
 def test_language_flag_overrides_locale_and_environment() -> None:

@@ -10,11 +10,13 @@ from ffai.errors import ParseError
 
 BuiltinName = Literal[
     "add",
+    "tool",
     "setoutput",
     "show",
     "preview",
     "exec",
     "reset",
+    "config",
     "help",
     "exit",
 ]
@@ -23,6 +25,8 @@ BuiltinName = Literal[
 # natural-language sentences from being mistaken for built-ins.
 _ALIASES: dict[str, BuiltinName] = {
     "add": "add",
+    "tool": "tool",
+    "工具": "tool",
     "setoutput": "setoutput",
     "show": "show",
     "preview": "preview",
@@ -97,6 +101,9 @@ def parse_input(raw: str) -> ParsedInput:
     elif command_name == "add":
         if not args:
             raise ParseError("Usage: add <input> [input ...]")
+    elif command_name == "tool":
+        if len(args) != 1 or args[0] not in {"ffmpeg", "pandoc"}:
+            raise ParseError("Usage: tool <ffmpeg|pandoc>")
     elif command_name == "setoutput" and len(args) != 1:
         raise ParseError("Usage: setoutput <output>")
     elif command_name == "config" and args not in {(), ("show",), ("set",)}:
