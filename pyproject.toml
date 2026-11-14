@@ -1,21 +1,21 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ffai"
+name = "ffai-cli"
 version = "0.2.0"
 description = "Natural-language, stateful media and document format conversion assistant (FFmpeg + Pandoc)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "ffai contributors" }]
 keywords = ["ffmpeg", "pandoc", "cli", "llm", "video", "document", "conversion", "openai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Natural Language :: Chinese (Simplified)",
     "Programming Language :: Python :: 3",

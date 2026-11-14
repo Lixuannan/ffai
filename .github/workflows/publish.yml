@@ -1,0 +1,95 @@
+# Publish ffai-cli to PyPI with Trusted Publishing (OIDC). No API token is
+# stored in this repository.
+#
+# ONE-TIME SETUP on https://pypi.org/manage/project/ffai-cli/settings/publishing/
+#   Add a "pending publisher" with exactly these values:
+#     PyPI project name : ffai-cli
+#     Owner             : Lixuannan
+#     Repository name   : ffai
+#     Workflow name     : publish.yml
+#     Environment name  : pypi
+#   A pending publisher lets the first run create the project automatically.
+#   Also create a GitHub Environment named "pypi" under
+#   Settings > Environments (optionally require reviewers before publishing).
+#
+# TO RELEASE
+#   1. Bump version in pyproject.toml AND __version__ in ffai/__init__.py.
+#   2. Create a GitHub Release with tag v<version> (or <version>, without the v).
+#   3. The release event triggers this workflow. workflow_dispatch is available
+#      for the initial verification run.
+#   PyPI never allows re-uploading the same version, even after deletion.
+
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade build twine
+
+      - name: Verify the release tag matches the package version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          with open("pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+          init = Path("ffai/__init__.py").read_text()
+          found = re.search(r'^__version__ = "([^"]+)"', init, re.M)
+          if not found or found.group(1) != version:
+              raise SystemExit("__version__ in ffai/__init__.py does not match pyproject.toml")
+          tag = os.environ["RELEASE_TAG"].lstrip("v")
+          if tag != version:
+              raise SystemExit(f"tag {tag!r} does not match pyproject version {version!r}")
+          print(f"tag {tag!r}, pyproject.toml and __version__ all match {version!r}")
+          PY
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Validate package metadata
+        run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ffai-cli
+    permissions:
+      id-token: write # required for OIDC Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

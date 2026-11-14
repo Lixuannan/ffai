@@ -28,6 +28,10 @@ def _configured_env() -> dict[str, str]:
     env = _clean_env()
     env["OPENAI_API_KEY"] = "sk-test-secret-value"
     env["OPENAI_MODEL"] = "test-model"
+    # Pin the endpoint: find_dotenv(usecwd=True) otherwise fills this from a
+    # developer's local .env (override=False), which changes the provider name
+    # shown by `config` and makes CLI assertions depend on the machine.
+    env["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
     return env
 
 

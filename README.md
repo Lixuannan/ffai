@@ -67,24 +67,35 @@ ffai> exec
 
 ## Installation
 
+Install from PyPI:
+
+```bash
+pip install ffai-cli
+```
+
+For an isolated command install:
+
+```bash
+pipx install ffai-cli
+```
+
+The distribution is named `ffai-cli` on PyPI; the Python package and the
+`ffai` command keep the shorter name.
+
+Verify the entry point:
+
+```bash
+ffai --version
+```
+
+### From source
+
 ```bash
 git clone https://github.com/Lixuannan/ffai.git
 cd ffai
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-```
-
-For an isolated command install:
-
-```bash
-pipx install .
-```
-
-Verify the entry point:
-
-```bash
-ffai --version
 ```
 
 ### FFmpeg
@@ -539,6 +550,21 @@ The parser, state transitions, command builders, configuration, and LLM
 response parsing are testable without a network connection. The LLM boundary is
 the only non-deterministic external dependency in the core path. Real executor
 tests run when the corresponding tool is available.
+
+### Publishing
+
+Releases go to PyPI from the `publish.yml` GitHub Actions workflow using
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/), so no API token
+is stored in the repository. One-time setup on PyPI: add a pending publisher for
+`ffai-cli` with owner `Lixuannan`, repository `ffai`, workflow `publish.yml`, and
+environment `pypi`. For each release, bump `version` in `pyproject.toml` and
+`__version__` in `ffai/__init__.py`, then publish a GitHub Release to trigger
+the upload. PyPI never allows reusing a version number.
+
+```bash
+python -m build
+twine check dist/*
+```
 
 ## Limitations
 

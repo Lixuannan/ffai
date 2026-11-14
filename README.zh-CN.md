@@ -49,24 +49,34 @@ ffai> exec
 
 ## 安装
 
+从 PyPI 安装：
+
+```bash
+pip install ffai-cli
+```
+
+也可以使用隔离安装：
+
+```bash
+pipx install ffai-cli
+```
+
+PyPI 上的发行包名为 `ffai-cli`，Python 包名和 `ffai` 命令仍使用短名。
+
+验证入口：
+
+```bash
+ffai --version
+```
+
+### 从源码安装
+
 ```bash
 git clone https://github.com/Lixuannan/ffai.git
 cd ffai
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-```
-
-也可以使用隔离安装：
-
-```bash
-pipx install .
-```
-
-验证入口：
-
-```bash
-ffai --version
 ```
 
 ### FFmpeg
@@ -440,6 +450,15 @@ pytest
 ```
 
 解析器、状态转换、命令构建器、配置和 LLM 响应解析都可以在无网络环境下测试。LLM 边界是核心路径中唯一非确定性的外部依赖。安装了对应工具时会运行真实的执行器测试。
+
+### 发布
+
+发布通过 `publish.yml` GitHub Actions 工作流，借助 [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) 上传到 PyPI，仓库中不需要保存 API token。首次使用时在 PyPI 项目设置里为 `ffai-cli` 添加 pending publisher：owner `Lixuannan`、仓库 `ffai`、工作流 `publish.yml`、环境 `pypi`。之后每次发版，同步更新 `pyproject.toml` 的 `version` 和 `ffai/__init__.py` 的 `__version__`，再创建 GitHub Release 即触发上传。PyPI 的版本号不可重复使用。
+
+```bash
+python -m build
+twine check dist/*
+```
 
 ## 已知限制
 
