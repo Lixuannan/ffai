@@ -9,7 +9,7 @@ structured task, and ffai builds the actual command locally with **FFmpeg**
 executed until you review the complete command and confirm it.
 
 ```text
-ffai v0.2.0
+ffai v0.3.0
 Natural-language interface for media and document conversion
 
 ffai> add notes.md

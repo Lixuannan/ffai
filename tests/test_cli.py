@@ -46,7 +46,7 @@ def test_version_uses_real_module_entry_point() -> None:
         check=False,
     )
     assert completed.returncode == 0
-    assert completed.stdout.strip() == "ffai 0.2.0"
+    assert completed.stdout.strip() == "ffai 0.3.0"
 
 
 def test_help_and_exit_through_the_repl() -> None:
