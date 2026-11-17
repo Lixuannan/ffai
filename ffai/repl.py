@@ -28,6 +28,7 @@ from ffai.config import (
 from ffai.errors import CommandBuildError, ConfigError, FFAIError, ParseError
 from ffai.executor import ExecutionResult, execute_tool
 from ffai.i18n import Translator, resolve_language
+from ffai.line_input import read_line
 from ffai.llm import LLMClient
 from ffai.models import LLMDecision, ToolName
 from ffai.parser import BuiltinCommand, NaturalLanguage, ParsedInput, parse_input
@@ -119,7 +120,11 @@ class FFaiRepl:
                 self.console.print()
             first_prompt = False
             try:
-                raw = self.console.input(PROMPT)
+                raw = read_line(
+                    self.console,
+                    PROMPT,
+                    interactive=self._can_prompt(),
+                )
             except EOFError:
                 self.console.print()
                 break
@@ -613,6 +618,8 @@ class FFaiRepl:
         examples.append(self.t("help.example_doc"), style="dim")
         examples.append(self.t("help.example_pdf"), style="dim")
         examples.append(self.t("help.llm_note"), style="dim")
+        examples.append("\n")
+        examples.append(self.t("help.tab_completion"), style="dim")
         examples.append("\n")
         examples.append(self.t("help.aliases"), style="dim")
 

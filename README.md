@@ -46,6 +46,8 @@ ffai> exec
   and embedded resources.
 - Rich task panels, syntax-highlighted command previews, confirmation prompts,
   and live FFmpeg progress.
+- Interactive line editing: history with the arrow keys, TAB completion of file
+  paths for `add` and `setoutput`, and a `ffai>` prompt that survives editing.
 - Provider presets for OpenAI, OpenRouter, DeepSeek, GLM, Kimi, and Qwen, plus
   a custom OpenAI-compatible endpoint.
 - First-run API setup wizard; `.env` settings are written with owner-only
@@ -243,6 +245,19 @@ Paths use shell-like quoting, so spaces in filenames work:
 ```text
 add "my input video.mp4"
 setoutput "renders/final cut.mp4"
+```
+
+TAB completes file paths for the argument of `add` and `setoutput`. Completion
+works from the current directory, from a relative subpath, or from an absolute
+path as typed; `~/` is expanded for lookup but stays `~/` in the inserted text.
+Directories are completed with a trailing `/` so you can keep navigating, hidden
+entries are only offered when the typed prefix starts with `.`, and names with
+spaces are escaped or kept inside an open quote automatically. TAB does nothing
+for other built-in commands or natural-language input.
+
+```text
+add vid<TAB>                # completes an input file in the current directory
+setoutput "renders/rec<TAB>  # completes paths, quoting names with spaces
 ```
 
 Exact Chinese aliases are also accepted: `预览`, `显示`, `执行`, `重置`,
@@ -460,6 +475,7 @@ The full model result also includes `explanation` and an optional `question`.
 | --- | --- |
 | `ffai/cli.py` | Argparse entry point and top-level error handling |
 | `ffai/repl.py` | REPL loop, dispatch, Rich presentation, confirmation |
+| `ffai/line_input.py` | Readline-backed prompt, history, and TAB path completion |
 | `ffai/parser.py` | Built-in command parsing versus natural language |
 | `ffai/models.py` | Tool-scoped task, patch, and LLM decision schemas |
 | `ffai/tools.py` | Tool registry, binaries, and extension-based routing |

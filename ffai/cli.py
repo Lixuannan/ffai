@@ -13,6 +13,7 @@ from ffai import __version__
 from ffai.config import Settings
 from ffai.errors import ConfigError
 from ffai.i18n import Translator, resolve_language
+from ffai.line_input import configure_line_editing
 from ffai.repl import FFaiRepl
 
 
@@ -58,7 +59,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Settings.load populates os.environ from .env, so re-resolve here to let
     # FFAI_LANG live in either the process environment or the project .env.
     translator = Translator(resolve_language(args.lang))
-    _configure_readline()
+    configure_line_editing()
     try:
         FFaiRepl(settings, console=console, translator=translator).run()
     except ConfigError as exc:
@@ -77,20 +78,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except BrokenPipeError:
         return 0
     return 0
-
-
-def _configure_readline() -> None:
-    try:
-        import readline
-    except ImportError:
-        # readline is unavailable on some platforms; Console.input still works,
-        # only arrow-key input history is lost.
-        return
-    try:
-        readline.set_history_length(1_000)
-    except (AttributeError, OSError):
-        # A stripped readline implementation may not expose history controls.
-        return
 
 
 if __name__ == "__main__":

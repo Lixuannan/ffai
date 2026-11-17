@@ -122,6 +122,7 @@ _CATALOGS: dict[Language, dict[str, str]] = {
             "of the selected tool; it never executes commands."
         ),
         "help.aliases": "Chinese aliases: 预览, 显示, 执行, 重置, 配置, 工具, 帮助, 退出",
+        "help.tab_completion": "TAB completes file paths for 'add' and 'setoutput'.\n",
         "task.title": "[bold]{tool} task[/bold] [dim]revision {revision}[/dim]",
         "task.inputs": "Inputs",
         "task.output": "Output",
@@ -292,6 +293,7 @@ _CATALOGS: dict[Language, dict[str, str]] = {
             "不会执行命令。"
         ),
         "help.aliases": "中文命令别名：预览、显示、执行、重置、配置、工具、帮助、退出",
+        "help.tab_completion": "add 和 setoutput 命令支持用 TAB 补全文件路径。\n",
         "task.title": "[bold]{tool} · 当前任务[/bold] [dim]版本 {revision}[/dim]",
         "task.inputs": "输入文件",
         "task.output": "输出文件",
